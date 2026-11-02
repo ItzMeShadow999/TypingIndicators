@@ -119,12 +119,50 @@ const isTypingText = (type: any, props: any) => {
     return flat(props.children).some(c => c?.type === "strong" || (typeof c === "string" && /typing/.test(c)));
 };
 
+const isTweaksProps = (type: any, props: any) =>
+    typeof type !== "string" &&
+    props != null &&
+    Array.isArray(props.users) &&
+    Array.isArray(props.children) &&
+    "guildId" in props &&
+    props.users.every((u: any) => typeof u?.id === "string");
+
+const isNameSlot = (c: any) =>
+    c != null && (c.type === "strong" || (typeof c !== "string" && !React.isValidElement(c)));
+
+const mutateTweaks = (props: any) => {
+    const users: any[] = props.users;
+    const me = UserStore.getCurrentUser().id;
+    if (!users.length || users.length > settings.store.maxUsers || users.some(u => u.id === me)) return props;
+
+    let n = 0;
+    let rowsAdded = 0;
+    const out: any[] = [];
+    for (const c of props.children) {
+        if (isNameSlot(c) && n < users.length) {
+            const row = rowFor(users[n++].id);
+            if (row) { out.push(row); rowsAdded++; }
+        }
+        out.push(c);
+    }
+
+    let children: any = out;
+    if (users.length === 1) {
+        const cfg = cfgOf(users[0].id);
+        if (cfg) children = swapWord(children, lookup(WORDS, "typingSuggestion", cfg.typingSuggestion ?? 0, "typing"));
+    }
+
+    if (!rowsAdded && children === out) return props;
+    return { ...props, children };
+};
+
 const hook = (obj: any, name: string) => {
     const orig = obj?.[name];
     if (typeof orig !== "function" || orig.__cti) return;
     const wrapped = function (this: any, type: any, props: any, ...rest: any[]) {
         try {
             if (isTypingText(type, props)) props = mutate(props);
+            else if (isTweaksProps(type, props)) props = mutateTweaks(props);
         } catch (e) { logger.warn("hook failed", e); }
         return orig.call(this, type, props, ...rest);
     };
@@ -136,7 +174,7 @@ const hook = (obj: any, name: string) => {
 export default definePlugin({
     name: "TypingIndicators",
     description: "Shows other users' custom typing indicators (emojis, status word, animation) in the native typing bar",
-    authors: [{ name: "ItzMeShadow999", id: 1065604516399026176n }],
+    authors: [{ name: "ItzMeShadow999", id: 0n }],
     settings,
 
     flux: {
